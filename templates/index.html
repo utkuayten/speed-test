@@ -2,12 +2,133 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Local Speed Test</title>
-  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Adaptive Download Speed Test</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background-color: #0e1117;
+      color: #e2e2e2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    h1 {
+      margin-bottom: 10px;
+      color: #61dafb;
+    }
+    button {
+      background: #61dafb;
+      border: none;
+      color: #000;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.3s;
+      margin-top: 20px;
+    }
+    button:hover {
+      background: #4ec3e0;
+    }
+    #speed {
+      font-size: 2em;
+      margin-top: 20px;
+      color: #00ff88;
+    }
+    #status {
+      margin-top: 10px;
+      color: #aaa;
+    }
+    #progress {
+      width: 300px;
+      height: 10px;
+      background: #333;
+      border-radius: 5px;
+      margin-top: 20px;
+      overflow: hidden;
+    }
+    #bar {
+      height: 100%;
+      width: 0%;
+      background: #00ff88;
+      transition: width 0.2s linear;
+    }
+  </style>
 </head>
 <body>
-  <h1>Internet Speed Test</h1>
-  <button onclick="runTests()">Start Test</button>
-  <p id="results"></p>
+  <h1>Download Speed Test</h1>
+  <div id="speed">Ready</div>
+  <div id="status">Press Start to begin</div>
+  <div id="progress"><div id="bar"></div></div>
+  <button id="startBtn">Start Test</button>
+
+  <script>
+    const SERVER = window.location.origin + "/download"; // Example: http://127.0.0.1:8080/download
+    const TEST_DURATION = 15000; // 15 seconds
+    const MAX_THREADS = 8;
+
+    let threads = 1;
+    let chunkSize = 1_000_000; // 1 MB
+    let speeds = [];
+    let startTime = null;
+
+    async function downloadOnce(size) {
+      const start = performance.now();
+      const res = await fetch(`${SERVER}?size=${size}`);
+      await res.arrayBuffer();
+      const end = performance.now();
+      return (size * 8) / ((end - start) / 1000); // bits per second
+    }
+
+    async function runTest() {
+      const speedEl = document.getElementById("speed");
+      const statusEl = document.getElementById("status");
+      const barEl = document.getElementById("bar");
+      const btn = document.getElementById("startBtn");
+
+      btn.disabled = true;
+      speedEl.textContent = "0 Mbps";
+      statusEl.textContent = "Running...";
+      barEl.style.width = "0%";
+
+      startTime = performance.now();
+      speeds = [];
+
+      while (performance.now() - startTime < TEST_DURATION) {
+        const promises = [];
+        for (let i = 0; i < threads; i++) {
+          promises.push(downloadOnce(chunkSize));
+        }
+
+        const results = await Promise.all(promises);
+        const avgSpeed = results.reduce((a, b) => a + b, 0) / results.length;
+        speeds.push(avgSpeed);
+
+        const mbps = (avgSpeed / 1e6).toFixed(2);
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(100, (elapsed / TEST_DURATION) * 100);
+
+        speedEl.textContent = `${mbps} Mbps`;
+        statusEl.textContent = `Threads: ${threads} | Chunk: ${(chunkSize / 1_000_000).toFixed(1)} MB`;
+        barEl.style.width = progress + "%";
+
+        // Adaptive logic
+        if (avgSpeed < 10e6 && threads < MAX_THREADS) threads++;
+        else if (avgSpeed > 50e6 && chunkSize < 10_000_000) chunkSize *= 2;
+      }
+
+      const finalAvg = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+      speedEl.textContent = `Final Avg: ${(finalAvg / 1e6).toFixed(2)} Mbps`;
+      statusEl.textContent = "✅ Test Complete";
+      barEl.style.width = "100%";
+      btn.disabled = false;
+    }
+
+    document.getElementById("startBtn").addEventListener("click", runTest);
+  </script>
 </body>
 </html>
