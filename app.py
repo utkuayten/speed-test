@@ -6,12 +6,12 @@ app = Flask(__name__)
 
 @app.route("/download")
 def download():
-    size = int(request.args.get("size", 1024 * 1000))  # default 1 MB
+    size = int(request.args.get("size", 1024 * 1000 * 2))  # default 1 MB
     data = os.urandom(size)
     return Response(data, mimetype="application/octet-stream")
 
 @app.route("/")
-def home():
+def index():
     return open("index.html").read()
 
 if __name__ == "__main__":
