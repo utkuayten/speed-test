@@ -1,0 +1,68 @@
+body {
+  font-family: monospace;
+  background: #0d1117;
+  color: #c9d1d9;
+  padding: 20px;
+  text-align: center;
+}
+
+h1 {
+  color: #58a6ff;
+  margin-bottom: 10px;
+}
+
+button {
+  background: #238636;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+button:hover { background: #2ea043; }
+
+.charts-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 30px;
+  flex-wrap: wrap;
+  margin-top: 25px;
+}
+
+.chart-box {
+  width: 500px;
+  background: #161b22;
+  padding: 15px;
+  border-radius: 10px;
+}
+
+.gauge-box {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  background: #161b22;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#gaugeText {
+  position: absolute;
+  font-size: 22px;
+  font-weight: bold;
+  color: #58a6ff;
+}
+
+#log {
+  white-space: pre;
+  background: #161b22;
+  padding: 15px;
+  border-radius: 8px;
+  height: 250px;
+  overflow-y: auto;
+  margin-top: 25px;
+  text-align: left;
+}
