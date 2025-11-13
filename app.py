@@ -1,102 +1,107 @@
-from flask import Flask, request, Response, jsonify, send_from_directory
+from flask import Flask, send_file, jsonify, request, make_response
+from flask_cors import CORS
+import argparse
 import os
+import time
 
-app = Flask(__name__, static_folder=".", static_url_path="")
+app = Flask(__name__)
+CORS(app)
+FILE_PATH = "/home/utku_ayten/speed-test/static/internet_file.bin"
 
-# === Test file settings ===
-FILE_PATH = os.path.abspath("internet_file.bin")
-CHUNK_SIZE = 64 * 1024  # 64 KiB
 
-def ensure_test_file():
-    """Create a random file if missing."""
-    if not os.path.exists(FILE_PATH):
-        print("Creating test file (250 MB)...")
-        with open(FILE_PATH, "wb") as f:
-            f.write(os.urandom(250 * 1024 * 1024))  # 250 MB
-ensure_test_file()
-
-# === Serve static files (HTML, JS, CSS) ===
-@app.route("/")
-def index():
-    return send_from_directory("../../../Downloads", "index.html")
-
-@app.route("/<path:path>")
-def static_files(path):
-    # Serve style.css, download.js, etc.
-    if os.path.exists(path):
-        return send_from_directory("../../../Downloads", path)
-    return Response("Not Found", status=404)
-
-# === Metadata ===
-@app.route("/meta")
-def meta():
-    size = os.path.getsize(FILE_PATH)
-    name = os.path.basename(FILE_PATH)
-    return jsonify({"name": name, "size": size})
-
-# === File stream ===
-def read_file_range(path, start, end):
-    with open(path, "rb") as f:
-        f.seek(start)
-        remaining = end - start + 1
-        while remaining > 0:
-            chunk = f.read(min(CHUNK_SIZE, remaining))
-            if not chunk:
-                break
-            yield chunk
-            remaining -= len(chunk)
-
-@app.route("/internet-file")
-def internet_file():
-    if not os.path.exists(FILE_PATH):
-        return Response("File not found", status=404)
-
-    file_size = os.path.getsize(FILE_PATH)
-    range_header = request.headers.get("Range")
-
-    if not range_header:
-        return Response(
-            read_file_range(FILE_PATH, 0, file_size - 1),
-            status=200,
-            mimetype="application/octet-stream",
-            headers={
-                "Content-Length": str(file_size),
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "no-store",
-            },
-        )
-
-    try:
-        units, rng = range_header.split("=")
-        if units.strip().lower() != "bytes":
-            return Response(status=416)
-        start_str, end_str = rng.split("-")
-        start = int(start_str) if start_str else 0
-        end = int(end_str) if end_str else file_size - 1
-        start = max(0, start)
-        end = min(end, file_size - 1)
-        if start > end:
-            return Response(status=416)
-    except Exception:
-        return Response(status=416)
-
-    length = end - start + 1
-    resp = Response(
-        read_file_range(FILE_PATH, start, end),
-        status=206,
-        mimetype="application/octet-stream",
-        headers={
-            "Content-Range": f"bytes {start}-{end}/{file_size}",
-            "Content-Length": str(length),
-            "Accept-Ranges": "bytes",
-            "Cache-Control": "no-store",
-        },
-    )
+# ===========================================================
+# 🌐 CORS for all routes
+# ===========================================================
+@app.after_request
+def add_cors_headers(resp):
+    """Attach CORS headers globally (for Range and Upload)."""
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Range, Origin, Content-Type, Accept"
+    resp.headers["Access-Control-Expose-Headers"] = "Content-Length, Content-Range, Accept-Ranges"
+    resp.headers["Cache-Control"] = "no-store"
     return resp
 
-@app.route("/ping")
-def ping():
-    return {"status": "ok", "port": 5001}
 
+# ===========================================================
+# 📏 Metadata endpoint
+# ===========================================================
+@app.route("/meta")
+def meta():
+    if not os.path.exists(FILE_PATH):
+        return jsonify({"error": "File not found"}), 404
+    size = os.path.getsize(FILE_PATH)
+    return jsonify({"name": os.path.basename(FILE_PATH), "size": size})
+
+
+# ===========================================================
+# 📥 Download file with Range support
+# ===========================================================
+@app.route("/internet-file", methods=["GET", "HEAD", "OPTIONS"])
+def internet_file():
+    """Serve binary file with Range and OPTIONS support."""
+    if request.method == "OPTIONS":
+        return make_response(("", 204))
+
+    if not os.path.exists(FILE_PATH):
+        return jsonify({"error": "File not found"}), 404
+
+    range_header = request.headers.get("Range")
+    file_size = os.path.getsize(FILE_PATH)
+
+    if range_header:
+        try:
+            byte_range = range_header.strip().split("=")[1]
+            start, end = byte_range.split("-")
+            start = int(start)
+            end = int(end) if end else file_size - 1
+            end = min(end, file_size - 1)
+        except Exception:
+            start, end = 0, file_size - 1
+
+        length = end - start + 1
+        with open(FILE_PATH, "rb") as f:
+            f.seek(start)
+            data = f.read(length)
+
+        response = make_response(data)
+        response.status_code = 206
+        response.headers["Content-Type"] = "application/octet-stream"
+        response.headers["Accept-Ranges"] = "bytes"
+        response.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+        response.headers["Content-Length"] = str(length)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    response = send_file(FILE_PATH, as_attachment=False)
+    response.headers["Accept-Ranges"] = "bytes"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+# ===========================================================
+# 📤 Upload endpoint (for upload test)
+# ===========================================================
+@app.route("/upload", methods=["POST", "OPTIONS"])
+def upload():
+    """Receive uploaded data and discard it (for speed testing)."""
+    if request.method == "OPTIONS":
+        return make_response(("", 204))
+
+    # Consume incoming data without saving
+    data = request.get_data(cache=False, as_text=False)
+    size = len(data) if data else 0
+    print(f"📥 Received chunk: {size} bytes")
+    return ("", 200)
+
+
+
+# ===========================================================
+# 🚀 Entry point
+# ===========================================================
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5001, threaded=True)
+    parser = argparse.ArgumentParser(description="Multi-port Flask server for speed test (upload + download)")
+    parser.add_argument("--port", type=int, required=True, help="Port number to bind")
+    args = parser.parse_args()
+
+    app.run(host="0.0.0.0", port=args.port, threaded=True)
