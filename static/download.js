@@ -10,9 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let currentWorker = null;
 
-  // ======================================================
-  // INLINE WORKER (with totalBytes)
-  // ======================================================
+
   const workerScript = `
     let fileSize = 0;
     let duration = 15;
@@ -178,9 +176,7 @@ document.addEventListener("DOMContentLoaded", () => {
     new Blob([workerScript], { type: "application/javascript" })
   );
 
-  // ======================================================
-  // START BUTTON
-  // ======================================================
+
   startBtn.addEventListener("click", async () => {
 
     if (currentWorker) {
@@ -228,9 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
           gaugeText.textContent = speed.toFixed(1) + " Mbps";
         }
 
-        // ====================================================
-        // FINISHED — MULTI-LINE FORMAT
-        // ====================================================
+
         if (d.done) {
           const mbUsed = (d.totalBytes / 1e6).toFixed(2);
 

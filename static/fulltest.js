@@ -7,9 +7,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Promise(r => setTimeout(r, ms));
   }
 
-  // ------------------------------
-  // DOWNLOAD
-  // ------------------------------
   function runDownload() {
     return new Promise(resolve => {
       window.__downloadDone = () => {
@@ -20,9 +17,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ------------------------------
-  // UPLOAD
-  // ------------------------------
   function runUpload() {
     return new Promise(resolve => {
       window.__uploadDone = () => {
@@ -33,9 +27,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ------------------------------
-  // LATENCY
-  // ------------------------------
   function runLatency() {
     return new Promise(resolve => {
       console.log("▶️ LATENCY START");
@@ -49,9 +40,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ------------------------------
-  // FULL TEST
-  // ------------------------------
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     console.log("🚀 FULL TEST START");

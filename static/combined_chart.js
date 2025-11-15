@@ -12,9 +12,6 @@ document.addEventListener("DOMContentLoaded", () => {
     type: "line",
     data: {
       datasets: [
-        // ------------------------------
-        // DOWNLOAD (Mbps)
-        // ------------------------------
         {
           label: "Download",
           data: [],
@@ -26,9 +23,6 @@ document.addEventListener("DOMContentLoaded", () => {
           yAxisID: "speedAxis"
         },
 
-        // ------------------------------
-        // UPLOAD (Mbps)
-        // ------------------------------
         {
           label: "Upload",
           data: [],
@@ -40,9 +34,6 @@ document.addEventListener("DOMContentLoaded", () => {
           yAxisID: "speedAxis"
         },
 
-        // ------------------------------
-        // LATENCY (ms)
-        // ------------------------------
         {
           label: "Latency (ms)",
           data: [],
@@ -63,9 +54,6 @@ document.addEventListener("DOMContentLoaded", () => {
       parsing: false,     // MUST KEEP for x/y numeric pairs
 
       scales: {
-        // =======================
-        // X — TIME (SECONDS)
-        // =======================
         x: {
           type: "linear",
           title: { display: true, text: "Seconds" },
@@ -74,9 +62,6 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         },
 
-        // =======================
-        // Y LEFT — SPEED (Mbps)
-        // =======================
         speedAxis: {
           type: "linear",
           position: "left",
@@ -84,9 +69,6 @@ document.addEventListener("DOMContentLoaded", () => {
           title: { display: true, text: "Mbps" }
         },
 
-        // =======================
-        // Y RIGHT — LATENCY (MS)
-        // =======================
         latencyAxis: {
           type: "linear",
           position: "right",
