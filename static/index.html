@@ -1,92 +1,97 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>⚡ Adaptive Parallel Speed Test</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8" />
+  <title>Speed Test</title>
+
+  <link rel="stylesheet" href="/static/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      background: #f6f8fa;
-      margin: 0;
-      padding: 2rem;
-    }
-    h1 { color: #222; }
-    p { color: #555; }
-
-    .charts-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 1.5rem;
-      margin-top: 2rem;
-    }
-    .chart-box {
-      width: 90%;
-      max-width: 700px;
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      padding: 1rem;
-    }
-    .gauge-box {
-      font-size: 2rem;
-      color: #0074e4;
-      margin-top: 0.5rem;
-      font-weight: bold;
-    }
-
-    button {
-      padding: 0.7rem 1.4rem;
-      margin: 0.3rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-    #startBtn { background: #0074e4; color: white; }
-    #uploadBtn { background: #28a745; color: white; }
-    button:hover { opacity: 0.9; }
-  </style>
 </head>
 
 <body>
-  <h1>⚡ Adaptive Parallel Speed Test</h1>
-  <p>Real-time adaptive download & upload benchmark.</p>
+  <h1>Speed Test</h1>
+  <p>Download + Upload + Latency visualized together.</p>
 
-  <!-- Control buttons -->
-  <div>
-    <button id="startBtn">Start Download Test</button>
-    <button id="uploadBtn">Start Upload Test</button>
+  <!-- BUTTONS -->
+  <div class="button-row">
+  
+<button id="fullTestBtn" style="background:#ff9800;color:#fff;"> Run Full Test </button>
+  <button id="startBtn">Start Download Test</button>
+  
+
+    <!-- WebSocket upload replaces HTTP upload -->
+    <button id="uploadBtn" style="background:#9c27b0;color:#fff;">
+      Start Upload Test
+    </button>
+
+    <!-- UPDATED (GREEN) -->
+    <button id="latencyBtn" style="background:#ffeb3b;color:#000;">
+      Start Latency Test
+    </button>
+
+    
+    <button id="clearChartBtn" style="background:#444;color:#fff;">Clear Chart</button>
+
   </div>
 
-  <!-- DOWNLOAD SECTION -->
-  <div class="charts-container">
-    <div class="chart-box">
-      <canvas id="avgChart" width="600" height="220"></canvas>
-    </div>
-    <div class="gauge-box">
-      <div id="gaugeText">0 Mbps</div>
-    </div>
+  <!-- COMBINED CHART -->
+  <div class="chart-box">
+    <canvas id="combinedChart" width="900" height="350"></canvas>
   </div>
 
-  <!-- UPLOAD SECTION -->
-  <div class="charts-container">
-    <div class="chart-box">
-      <canvas id="uploadChart" width="600" height="220"></canvas>
-    </div>
-    <div class="gauge-box">
-      <div id="uploadGaugeText">0 Mbps</div>
-    </div>
+<div class="metrics-row">
+  <div class="metric-card" id="downloadCard" style="border: 3px solid #2196f3;">
+    <div class="metric-label">Download</div>
+    <div class="metric-value" id="gaugeText">-- Mbps</div>
   </div>
 
-  <!-- Scripts must be after DOM -->
-  <script src="/static/download.js"></script>
-  <script src="/static/upload.js"></script>
+  <div class="metric-card" id="uploadCard" style="border: 3px solid #9c27b0;">
+    <div class="metric-label">Upload</div>
+    <div class="metric-value" id="uploadGaugeText">-- Mbps</div>
+  </div>
+
+  <div class="metric-card" id="latencyCard" style="border: 3px solid #ffeb3b;">
+    <div class="metric-label">Latency</div>
+    <div class="metric-value" id="latencyGaugeText">-- ms</div>
+  </div>
+</div>
+
+<!-- LOG PANEL -->
+<div id="logPanel" style="
+  width: 900px;
+  height: 200px;
+  margin: 20px auto;
+  padding: 10px;
+  background: #111;
+  color: #fff;
+  font-family: monospace;
+  font-size: 14px;
+  overflow-y: auto;
+  border: 1px solid #444;
+  border-radius: 8px;
+">
+</div>
+
+<button id="clearLogBtn" style="margin: 10px auto; display:block;">
+  Clear Logs
+</button>
+
+
+
+  <!-- JS FILES (combined_chart must load before upload_ws.js!) -->
+  <script src="/static/combined_chart.js" defer></script>
+  <script src="/static/clear_chart.js" defer></script>
+  <script src="/static/log_panel.js" defer></script>
+  <script src="/static/download.js" defer></script>
+
+  <!-- REMOVED: HTTP upload -->
+  <!-- <script src="/static/upload.js" defer></script> -->
+
+  <script src="/static/latency.js" defer></script>
+  <script src="/static/fulltest.js" defer></script>
+
+  <!-- WebSocket upload now handles #uploadBtn -->
+  <script src="/static/upload_ws.js" defer></script>
 
 </body>
 </html>

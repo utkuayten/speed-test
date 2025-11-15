@@ -1,47 +1,18 @@
+// static/download.js
 document.addEventListener("DOMContentLoaded", () => {
   const startBtn = document.getElementById("startBtn");
   const gaugeText = document.getElementById("gaugeText");
-  const chartCanvas = document.getElementById("avgChart");
 
-  // Safety checks
-  if (!startBtn || !gaugeText || !chartCanvas) {
-    console.error("❌ Missing required DOM elements");
+  if (!startBtn || !gaugeText || !window.combinedChart) {
+    console.error("❌ Missing DOM or chart");
     return;
   }
 
-  let chart = null;
   let currentWorker = null;
 
-  // === Chart setup ===
-  function createChart() {
-    const ctx = chartCanvas.getContext("2d");
-    if (chart) chart.destroy();
-
-    chart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: [],
-        datasets: [{
-          label: "Download Speed (Mbps)",
-          data: [],
-          borderColor: "blue",
-          borderWidth: 2,
-          fill: false,
-          tension: 0.25
-        }]
-      },
-      options: {
-        animation: false,
-        responsive: true,
-        scales: {
-          x: { title: { display: true, text: "Time (s)" } },
-          y: { title: { display: true, text: "Speed (Mbps)" }, beginAtZero: true }
-        }
-      }
-    });
-  }
-
-  // === INLINE WORKER CODE (FULL FIXED VERSION) ===
+  // ======================================================
+  // INLINE WORKER (with totalBytes)
+  // ======================================================
   const workerScript = `
     let fileSize = 0;
     let duration = 15;
@@ -54,18 +25,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const HISTORY_LEN = 5;
     const history = [];
-
-    // Only 2 stable backend ports
     const ports = [8080, 8081];
+
+    let totalBytes = 0;
 
     onmessage = (e) => {
       ({ duration, fileSize, hostname } = e.data);
       stop = false;
+      totalBytes = 0;
       startTest();
     };
 
     function safeSpawn(id, connStats) {
-      fetchRange(id, connStats).catch(() => {});
+      fetchRange(id, connStats).catch(()=>{});
     }
 
     function expandCapacity(avg5s, prevAvg, connStats) {
@@ -75,33 +47,32 @@ document.addEventListener("DOMContentLoaded", () => {
         const newConn = Math.min(connections * 2, maxConnections);
         if (newConn > connections) {
           const add = newConn - connections;
-          postMessage({ log: '⚙️ Rising throughput → +' + add + ' connections (' + newConn + ')' });
+          postMessage({ log: '⚙️ +' + add + ' conns → ' + newConn });
 
           for (let i = connections; i < newConn; i++) {
             connStats.push({ bytes: 0 });
             safeSpawn(i, connStats);
           }
+
           connections = newConn;
           scaled = true;
         }
 
         if (fragSize < 64 * 1024 * 1024) {
           fragSize = Math.min(fragSize * 2, 64 * 1024 * 1024);
-          postMessage({ log: '📦 Fragment size → ' + (fragSize / 1024 / 1024).toFixed(1) + ' MB' });
+          postMessage({ log: '📦 frag → ' + (fragSize/1024/1024).toFixed(1) + 'MB' });
           scaled = true;
         }
 
         if (scaled) {
-          postMessage({
-            log: '🚀 Expansion done: ' + connections +
-                 ' links, ' + (fragSize / 1024 / 1024).toFixed(1) + ' MB blocks'
-          });
+          postMessage({ log: '🚀 scaled → ' + connections + ' links, ' +
+            (fragSize/1024/1024).toFixed(1) + 'MB block' });
         }
       }
     }
 
     async function startTest() {
-      postMessage({ log: '🚀 Download test start — ' + connections + ' initial connections' });
+      postMessage({ log: '🚀 download start — ' + connections + ' conns' });
 
       const connStats = Array.from({ length: connections }, () => ({ bytes: 0 }));
 
@@ -116,21 +87,26 @@ document.addEventListener("DOMContentLoaded", () => {
       const steadySamples = [];
 
       const timer = setInterval(() => {
-        const elapsed = (performance.now() - t0) / 1000;
+        const elapsed = (performance.now() - t0)/1000;
 
-        const total = connStats.reduce((a, c) => a + c.bytes, 0);
+        const total = connStats.reduce((a,c)=>a+c.bytes,0);
         const delta = Math.max(0, total - prevTotal);
         prevTotal = total;
+
+        totalBytes = total; // track total downloaded
 
         const mbps = (delta * 8) / 1e6 / 0.5;
 
         history.push(mbps);
         if (history.length > HISTORY_LEN) history.shift();
 
-        const avg5s = history.reduce((a, b) => a + b, 0) / history.length;
+        const avg5s = history.reduce((a,b)=>a+b,0) / history.length;
+
         peak5s = Math.max(peak5s, avg5s);
 
-        if (elapsed >= duration / 2) steadySamples.push(avg5s);
+        if (elapsed >= duration/2) {
+          steadySamples.push(avg5s);
+        }
 
         postMessage({ elapsed, avg5s });
 
@@ -139,21 +115,26 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         prevAvg = avg5s;
 
-        if (!frozen && elapsed >= duration / 2) {
+        if (!frozen && elapsed >= duration/2) {
           frozen = true;
-          postMessage({ log: '🧊 Steady phase — config locked' });
+          postMessage({ log: '🧊 steady-phase locked' });
         }
 
         if (elapsed >= duration) {
           stop = true;
           clearInterval(timer);
+
           const steadyAvg = steadySamples.length
-            ? steadySamples.reduce((a,b)=>a+b)/steadySamples.length
+            ? steadySamples.reduce((a,b)=>a+b,0)/steadySamples.length
             : 0;
 
-          postMessage({ done: true, peak5s, steadyAvg });
+          postMessage({
+            done:true,
+            peak5s,
+            steadyAvg,
+            totalBytes
+          });
         }
-
       }, 500);
     }
 
@@ -166,13 +147,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const end = Math.min(start + fragSize - 1, fileSize - 1);
 
         const url = "http://" + hostname + ":" + port + "/internet-file?r=" +
-                     Math.random().toString(36).slice(2);
+          Math.random().toString(36).slice(2);
 
         try {
           const res = await fetch(url, {
-            headers: { Range: "bytes=" + start + "-" + end },
-            cache: "no-store",
-            mode: "cors"
+            headers: { Range:"bytes=" + start + "-" + end },
+            cache:"no-store",
+            mode:"cors"
           });
 
           if (!res.ok) continue;
@@ -183,6 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (done || stop) break;
             connStats[id].bytes += value.byteLength;
           }
+
         } catch {
           await new Promise(r => setTimeout(r, 200));
         }
@@ -192,25 +174,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   `;
 
-  const workerURL = URL.createObjectURL(new Blob([workerScript], { type: "application/javascript" }));
+  const workerURL = URL.createObjectURL(
+    new Blob([workerScript], { type: "application/javascript" })
+  );
 
-  // === Start button logic ===
+  // ======================================================
+  // START BUTTON
+  // ======================================================
   startBtn.addEventListener("click", async () => {
+
     if (currentWorker) {
       try { currentWorker.terminate(); } catch {}
       currentWorker = null;
     }
 
-    createChart();
+    window.combinedChart.data.datasets[0].data = [];
+    window.combinedChart.data.datasets[0].data.push({ x: 0, y: 0 });
+    window.combinedChart.update();
+
     startBtn.disabled = true;
     gaugeText.textContent = "Starting...";
 
     try {
       const meta = await fetch("/meta", { cache: "no-store" }).then(r => r.json());
+
       const w = new Worker(workerURL);
       currentWorker = w;
 
-      const startTime = performance.now();
+      const t0 = performance.now();
 
       w.postMessage({
         duration: 15,
@@ -224,20 +215,31 @@ document.addEventListener("DOMContentLoaded", () => {
         if (d.log) console.log(d.log);
 
         if (typeof d.avg5s === "number") {
-          const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
-          const speed = d.avg5s.toFixed(1);
+          const elapsed = (performance.now() - t0) / 1000;
+          const speed = d.avg5s;
 
-          chart.data.labels.push(elapsed);
-          chart.data.datasets[0].data.push(speed);
-          chart.update();
+          window.combinedChart.data.datasets[0].data.push({
+            x: elapsed,
+            y: speed
+          });
 
-          gaugeText.textContent = speed + " Mbps";
+          window.combinedChart.update();
+
+          gaugeText.textContent = speed.toFixed(1) + " Mbps";
         }
 
+        // ====================================================
+        // FINISHED — MULTI-LINE FORMAT
+        // ====================================================
         if (d.done) {
-          gaugeText.textContent =
-            "Peak: " + d.peak5s.toFixed(1) +
-            " Mbps | Steady: " + d.steadyAvg.toFixed(1) + " Mbps";
+          const mbUsed = (d.totalBytes / 1e6).toFixed(2);
+
+          gaugeText.innerHTML =
+            `Peak: ${d.peak5s.toFixed(1)} Mbps<br>` +
+            `Steady: ${d.steadyAvg.toFixed(1)} Mbps<br>` +
+            `Used: ${mbUsed} MB`;
+
+          window.__downloadDone?.(d);
 
           startBtn.disabled = false;
           try { w.terminate(); } catch {}
@@ -246,7 +248,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
     } catch (err) {
-      console.error("Download init failed:", err);
+      console.error("❌ Download init failed:", err);
       gaugeText.textContent = "Download init error";
       startBtn.disabled = false;
     }

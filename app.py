@@ -1,107 +1,184 @@
-from flask import Flask, send_file, jsonify, request, make_response
+from flask import Flask, send_file, jsonify, request, make_response, Response
 from flask_cors import CORS
+from flask_sock import Sock
 import argparse
 import os
 import time
+import json
+import eventlet
+import eventlet.wsgi
 
 app = Flask(__name__)
 CORS(app)
+sock = Sock(app)
+
 FILE_PATH = "/home/utku_ayten/speed-test/static/internet_file.bin"
 
 
-# ===========================================================
-# 🌐 CORS for all routes
-# ===========================================================
+# ----------------------------------------------------------
+# Global CORS
+# ----------------------------------------------------------
 @app.after_request
 def add_cors_headers(resp):
-    """Attach CORS headers globally (for Range and Upload)."""
     resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, POST, OPTIONS"
-    resp.headers["Access-Control-Allow-Headers"] = "Range, Origin, Content-Type, Accept"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, HEAD"
+    resp.headers["Access-Control-Allow-Headers"] = "Range, Content-Type, Origin, Accept"
     resp.headers["Access-Control-Expose-Headers"] = "Content-Length, Content-Range, Accept-Ranges"
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
-# ===========================================================
-# 📏 Metadata endpoint
-# ===========================================================
+# ----------------------------------------------------------
+# /ping  — Latency RTT
+# ----------------------------------------------------------
+@app.route("/ping", methods=["GET", "HEAD"])
+def ping():
+    return ("pong", 200)
+
+
+# ----------------------------------------------------------
+# /ws-upload — WebSocket Upload
+# ----------------------------------------------------------
+@sock.route('/ws-upload')
+def ws_upload(ws):
+    print("⚡ WS upload client connected")
+
+    last_t = time.time()
+
+    while True:
+        try:
+            data = ws.receive()
+            if data is None:
+                print("❌ WS disconnected")
+                break
+
+            now = time.time()
+            dt = now - last_t
+            last_t = now
+            size = len(data)
+
+            # Compute Mbps on the server side (optional for debugging)
+            mbps = (size * 8) / dt / 1e6 if dt > 0 else 0
+            print(f"RECV {size} bytes dt={dt:.4f}s rate={mbps:.2f} Mbps")
+
+            # ACK — tell client to send next frame
+            ws.send(json.dumps({
+                "bytes": size,
+                "dt": dt
+            }))
+
+        except Exception as e:
+            print("❌ WS ERROR:", e)
+            break
+
+    print("🔌 WS upload closed")
+
+
+# ----------------------------------------------------------
+# /meta — Download file info
+# ----------------------------------------------------------
 @app.route("/meta")
 def meta():
     if not os.path.exists(FILE_PATH):
-        return jsonify({"error": "File not found"}), 404
+        return jsonify({"error": "File missing"}), 404
+
     size = os.path.getsize(FILE_PATH)
-    return jsonify({"name": os.path.basename(FILE_PATH), "size": size})
+    return jsonify({
+        "name": os.path.basename(FILE_PATH),
+        "size": size
+    })
 
 
-# ===========================================================
-# 📥 Download file with Range support
-# ===========================================================
+# ----------------------------------------------------------
+# /internet-file (Range Download)
+# ----------------------------------------------------------
 @app.route("/internet-file", methods=["GET", "HEAD", "OPTIONS"])
 def internet_file():
-    """Serve binary file with Range and OPTIONS support."""
     if request.method == "OPTIONS":
-        return make_response(("", 204))
+        return ("", 204)
 
     if not os.path.exists(FILE_PATH):
-        return jsonify({"error": "File not found"}), 404
+        return jsonify({"error": "File missing"}), 404
 
-    range_header = request.headers.get("Range")
     file_size = os.path.getsize(FILE_PATH)
+    range_header = request.headers.get("Range")
 
+    # RANGE request
     if range_header:
         try:
-            byte_range = range_header.strip().split("=")[1]
-            start, end = byte_range.split("-")
-            start = int(start)
-            end = int(end) if end else file_size - 1
-            end = min(end, file_size - 1)
-        except Exception:
+            _, rng = range_header.split("=")
+            start_str, end_str = rng.split("-")
+            start = int(start_str)
+            end = int(end_str) if end_str else file_size - 1
+        except:
             start, end = 0, file_size - 1
 
+        end = min(end, file_size - 1)
         length = end - start + 1
-        with open(FILE_PATH, "rb") as f:
-            f.seek(start)
-            data = f.read(length)
 
-        response = make_response(data)
-        response.status_code = 206
-        response.headers["Content-Type"] = "application/octet-stream"
-        response.headers["Accept-Ranges"] = "bytes"
-        response.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-        response.headers["Content-Length"] = str(length)
-        response.headers["Cache-Control"] = "no-store"
-        return response
+        def generate():
+            with open(FILE_PATH, "rb") as f:
+                f.seek(start)
+                remaining = length
+                chunk = 256 * 1024
+                while remaining > 0:
+                    block = f.read(min(chunk, remaining))
+                    if not block:
+                        break
+                    remaining -= len(block)
+                    yield block
 
-    response = send_file(FILE_PATH, as_attachment=False)
-    response.headers["Accept-Ranges"] = "bytes"
-    response.headers["Cache-Control"] = "no-store"
-    return response
+        resp = Response(generate(), status=206)
+        resp.headers["Content-Type"] = "application/octet-stream"
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+        resp.headers["Content-Length"] = str(length)
+        return resp
+
+    # NORMAL download
+    resp = send_file(FILE_PATH, as_attachment=False)
+    resp.headers["Accept-Ranges"] = "bytes"
+    return resp
 
 
-# ===========================================================
-# 📤 Upload endpoint (for upload test)
-# ===========================================================
+# ----------------------------------------------------------
+# HTTP Upload (fallback)
+# ----------------------------------------------------------
 @app.route("/upload", methods=["POST", "OPTIONS"])
 def upload():
-    """Receive uploaded data and discard it (for speed testing)."""
     if request.method == "OPTIONS":
-        return make_response(("", 204))
+        return ("", 204)
 
-    # Consume incoming data without saving
-    data = request.get_data(cache=False, as_text=False)
-    size = len(data) if data else 0
-    print(f"📥 Received chunk: {size} bytes")
-    return ("", 200)
+    total = 0
+    for chunk in request.stream:
+        total += len(chunk)
+
+    print(f"📥 HTTP Upload received: {total/1024/1024:.2f} MB")
+
+    resp = make_response("", 200)
+    resp.headers["Content-Length"] = "0"
+    resp.headers["Connection"] = "keep-alive"
+    return resp
 
 
-
-# ===========================================================
-# 🚀 Entry point
-# ===========================================================
+# ----------------------------------------------------------
+# Entry — Eventlet WebSocket Server
+# ----------------------------------------------------------
+# ----------------------------------------------------------
+# Entry Point
+# ----------------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Multi-port Flask server for speed test (upload + download)")
-    parser.add_argument("--port", type=int, required=True, help="Port number to bind")
+    import eventlet
+    import eventlet.wsgi
+
+    parser = argparse.ArgumentParser(description="Speed test Flask node")
+    parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
 
-    app.run(host="0.0.0.0", port=args.port, threaded=True)
+    print(f"🚀 WebSocket-enabled server starting on port {args.port}")
+
+    eventlet.wsgi.server(
+        eventlet.listen(("0.0.0.0", args.port)),
+        app,
+        log_output=True
+    )
